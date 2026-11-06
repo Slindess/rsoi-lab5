@@ -1,38 +1,142 @@
 name: GitHub Classroom Workflow
 on:
   push:
-    branches: [ master ]
+    branches: [master]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+# Test scenarios change replica counts; do not run deployments/tests concurrently.
+concurrency:
+  group: regru-lab5
+  cancel-in-progress: false
+
 jobs:
   build:
-    name: Autograding
+    name: Build and test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
-          fetch-depth: 0
-
-      - uses: docker/setup-buildx-action@v2
-
-      # TODO build, publish to docker hub, deploy to k8s
-
-      - name: Run API Tests
-        uses: matt-ball/newman-action@master
+          dotnet-version: '9.0.x'
+      - run: dotnet restore HotelsBooking.sln
+      - run: dotnet build HotelsBooking.sln -c Release --no-restore
+      - run: dotnet test HotelsBooking.sln -c Release --no-build
+      - uses: azure/setup-helm@v4.3.1
         with:
-          collection: <variant>/postman/collection.json
-          environment: <variant>/postman/environment.json
-          delayRequest: 100
-          reporters: '[ "cli" ]'
+          version: v3.17.3
+      - name: Validate Helm charts
+        run: |
+          for service in loyalty payment reservation gateway; do
+            helm lint helm/booking-service -f "deploy/$service-service.yaml"
+            helm template "$service-service" helm/booking-service -f "deploy/$service-service.yaml" >/dev/null
+          done
+          helm lint helm/postgres --set nodeName=validation-worker
+          helm template postgres helm/postgres --set nodeName=validation-worker >/dev/null
 
-      - uses: education/autograding@v1
+  images:
+    name: Publish images
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: gateway-service
+            project: GatewayService
+          - service: loyalty-service
+            project: LoyaltyService
+          - service: payment-service
+            project: PaymentService
+          - service: reservation-service
+            project: ReservationService
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: services/${{ matrix.project }}/Dockerfile
+          push: true
+          tags: |
+            mslinyakov/${{ matrix.service }}:${{ github.sha }}
+            mslinyakov/${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+  deploy:
+    name: Deploy and autograde
+    needs: images
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NAMESPACE: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: v1.35.0
+      - uses: azure/setup-helm@v4.3.1
+        with:
+          version: v3.17.3
+      - name: Configure cluster access
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          test -n "$KUBE_CONFIG"
+          CONFIG_PATH="$RUNNER_TEMP/regru-kubeconfig.yaml"
+          echo "CONFIG_PATH=$CONFIG_PATH" >> "$GITHUB_ENV"
+          umask 077
+          printf '%s\n' "$KUBE_CONFIG" > "$CONFIG_PATH"
+          kubectl --kubeconfig "$CONFIG_PATH" get nodes
+      - name: Deploy database and services
+        run: ./scripts/deploy.sh "$CONFIG_PATH" "$GITHUB_SHA" "$NAMESPACE"
+      - name: Set public API address
+        run: |
+          address=$(kubectl --kubeconfig "$CONFIG_PATH" -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          test -n "$address"
+          echo "BASE_URL=http://$address" >> "$GITHUB_ENV"
+          curl --fail --retry 12 --retry-all-errors --retry-delay 5 --connect-timeout 5 --max-time 10 "http://$address/manage/health"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm install -g newman@6
+      # education/autograding v1 strips custom environment variables from tests.
+      - name: Configure autograding command
+        run: |
+          python3 - <<'PY'
+          import json, os, shlex
+          from pathlib import Path
+          path = Path('.github/classroom/autograding.json')
+          config = json.loads(path.read_text())
+          config['tests'][0]['run'] = shlex.join([
+              'env', 'BASE_URL=' + os.environ['BASE_URL'],
+              'CONFIG_PATH=' + os.environ['CONFIG_PATH'],
+              'newman', 'run', '--delay-request=100',
+              '--env-var', 'serviceUrl=' + os.environ['BASE_URL'],
+              '-e', 'v2/postman/environment.json', 'v2/postman/collection.json',
+          ])
+          path.write_text(json.dumps(config, indent=2) + '\n')
+          PY
+      - name: Autograding
+        uses: education/autograding@v1
         id: autograder
         continue-on-error: true
-
-      - name: Github auto grader mark
-        uses: Romanow/google-sheet-autograder-marker@v1.0
-        with:
-          google_token: ${{secrets.GOOGLE_API_KEY}}
-          sheet_id: "1xkgjUX6Qmk7rdJG-QPOToav-HWWtthJjnShIKnw3oIY"
-          homework_number: 5
-          user_column: 'D'
-          column_offset: 'F'
-          mark: "'+"
+      - name: Show diagnostics on failure
+        if: failure()
+        run: |
+          kubectl --kubeconfig "$CONFIG_PATH" -n "$NAMESPACE" get pods,svc,ingress
+          kubectl --kubeconfig "$CONFIG_PATH" -n "$NAMESPACE" get events --sort-by=.metadata.creationTimestamp
+      - name: Remove local credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/regru-kubeconfig.yaml"

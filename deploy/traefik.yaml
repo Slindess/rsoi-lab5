@@ -1,0 +1,5 @@
+providers:
+  kubernetesIngress:
+    enabled: true
+service:
+  type: LoadBalancer

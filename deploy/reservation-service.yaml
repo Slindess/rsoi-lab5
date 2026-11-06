@@ -1,0 +1,5 @@
+image:
+  repository: mslinyakov/reservation-service
+service:
+  port: 8070
+connectionSecretKey: reservation-connection

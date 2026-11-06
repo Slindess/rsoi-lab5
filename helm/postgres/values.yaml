@@ -1,0 +1,10 @@
+image: postgres:16-alpine
+nodeName: ""
+hostPath: /var/lib/rsoi-lab5/postgres
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 384Mi

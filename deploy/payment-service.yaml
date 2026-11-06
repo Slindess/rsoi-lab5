@@ -1,0 +1,5 @@
+image:
+  repository: mslinyakov/payment-service
+service:
+  port: 8060
+connectionSecretKey: payment-connection

@@ -1234,3 +1234,13 @@ buildNumber.properties
 .mvn/timing.properties
 # https://github.com/takari/maven-wrapper#usage-without-binary-jar
 .mvn/wrapper/maven-wrapper.jar
+# Kubernetes credentials (never commit)
+kubeconfig*.yaml
+kubeconfig*.yml
+*.kubeconfig
+
+# Keep deployment scripts: the template's [Ss]cripts rule ignores this directory.
+!/scripts/
+/scripts/*
+!/scripts/deploy.sh
+!/scripts/test-script.sh

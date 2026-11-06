@@ -1,0 +1,5 @@
+image:
+  repository: mslinyakov/loyalty-service
+service:
+  port: 8050
+connectionSecretKey: loyalty-connection

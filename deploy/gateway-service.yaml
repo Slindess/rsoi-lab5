@@ -1,0 +1,10 @@
+image:
+  repository: mslinyakov/gateway-service
+service:
+  port: 8080
+env:
+  Services__Loyalty: http://loyalty-service:8050
+  Services__Payment: http://payment-service:8060
+  Services__Reservation: http://reservation-service:8070
+ingress:
+  enabled: true

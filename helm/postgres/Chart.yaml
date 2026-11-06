@@ -1,0 +1,5 @@
+apiVersion: v2
+name: booking-postgres
+description: Lab PostgreSQL on a fixed worker local disk
+type: application
+version: 0.1.0
