@@ -10,7 +10,7 @@ permissions:
   contents: read
   checks: write
 
-# Test scenarios change replica counts; do not run deployments/tests concurrently.
+# Serialize deployments and API tests against the shared cluster.
 concurrency:
   group: regru-lab5
   cancel-in-progress: false
@@ -38,6 +38,8 @@ jobs:
           done
           helm lint helm/postgres --set nodeName=validation-worker
           helm template postgres helm/postgres --set nodeName=validation-worker >/dev/null
+          helm lint helm/keycloak --set nodeName=validation-worker
+          helm template keycloak helm/keycloak --set nodeName=validation-worker >/dev/null
 
   images:
     name: Publish images
@@ -115,16 +117,35 @@ jobs:
       - name: Configure autograding command
         run: |
           python3 - <<'PY'
-          import json, os, shlex
+          import base64, json, os, shlex, subprocess
           from pathlib import Path
           path = Path('.github/classroom/autograding.json')
           config = json.loads(path.read_text())
+          secret = json.loads(subprocess.check_output([
+              'kubectl', '--kubeconfig', os.environ['CONFIG_PATH'],
+              '-n', os.environ['NAMESPACE'], 'get', 'secret', 'keycloak-credentials', '-o', 'json',
+          ]))['data']
+          environment = json.loads(Path('v2/postman/environment.json').read_text())
+          values = {
+              'serviceUrl': os.environ['BASE_URL'],
+              'identityProviderUrl': os.environ['BASE_URL'] + '/auth/realms/rsoi',
+              'username': 'test-user', 'clientId': 'booking',
+              'password': base64.b64decode(secret['test-password']).decode(),
+              'clientSecret': base64.b64decode(secret['client-secret']).decode(),
+          }
+          for key in ['password', 'clientSecret']:
+              print('::add-mask::' + values[key])
+          for entry in environment['values']:
+              entry['value'] = values.get(entry['key'], entry['value'])
+          environment_path = Path(os.environ['RUNNER_TEMP']) / 'booking-postman-environment.json'
+          environment_path.touch(mode=0o600)
+          environment_path.write_text(json.dumps(environment))
           config['tests'][0]['run'] = shlex.join([
               'env', 'BASE_URL=' + os.environ['BASE_URL'],
               'CONFIG_PATH=' + os.environ['CONFIG_PATH'],
               'newman', 'run', '--delay-request=100',
               '--env-var', 'serviceUrl=' + os.environ['BASE_URL'],
-              '-e', 'v2/postman/environment.json', 'v2/postman/collection.json',
+              '-e', str(environment_path), 'v2/postman/collection.json',
           ])
           path.write_text(json.dumps(config, indent=2) + '\n')
           PY
@@ -139,4 +160,4 @@ jobs:
           kubectl --kubeconfig "$CONFIG_PATH" -n "$NAMESPACE" get events --sort-by=.metadata.creationTimestamp
       - name: Remove local credentials
         if: always()
-        run: rm -f "$RUNNER_TEMP/regru-kubeconfig.yaml"
+        run: rm -f "$RUNNER_TEMP/regru-kubeconfig.yaml" "$RUNNER_TEMP/booking-postman-environment.json"

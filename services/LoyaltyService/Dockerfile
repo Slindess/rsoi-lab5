@@ -3,6 +3,7 @@ WORKDIR /src
 COPY services/LoyaltyService/LoyaltyService.csproj services/LoyaltyService/
 RUN dotnet restore services/LoyaltyService/LoyaltyService.csproj
 COPY services/LoyaltyService services/LoyaltyService
+COPY services/Shared services/Shared
 RUN dotnet publish services/LoyaltyService/LoyaltyService.csproj -c Release -o /app --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app

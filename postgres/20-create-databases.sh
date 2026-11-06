@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-# TODO для создания баз прописать свой вариант
-export VARIANT="v2"
-export SCRIPT_PATH=/docker-entrypoint-initdb.d/
-export PGPASSWORD=postgres
-psql -f "$SCRIPT_PATH/scripts/db-$VARIANT.sql"
+psql --username "${POSTGRES_USER:-postgres}" --dbname "${POSTGRES_DB:-postgres}" --set ON_ERROR_STOP=1 <<'SQL'
+CREATE DATABASE reservations OWNER program;
+CREATE DATABASE payments OWNER program;
+CREATE DATABASE loyalties OWNER program;
+SQL

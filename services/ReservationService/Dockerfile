@@ -3,6 +3,7 @@ WORKDIR /src
 COPY services/ReservationService/ReservationService.csproj services/ReservationService/
 RUN dotnet restore services/ReservationService/ReservationService.csproj
 COPY services/ReservationService services/ReservationService
+COPY services/Shared services/Shared
 RUN dotnet publish services/ReservationService/ReservationService.csproj -c Release -o /app --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app

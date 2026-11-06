@@ -42,7 +42,27 @@ else:
 fi
 
 helm upgrade --install postgres "$root/helm/postgres" "${helm_args[@]}" --set-string "nodeName=$node_name"
+# Keycloak has its own database and persistent credentials.
+if ! "${kube[@]}" get secret keycloak-credentials >/dev/null 2>&1; then
+  python3 - "$config" "$namespace" <<'PYSECRET'
+import json, secrets, subprocess, sys
+secret = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': 'keycloak-credentials'},
+          'type': 'Opaque', 'stringData': {key: secrets.token_urlsafe(32) for key in
+          ['db-password', 'admin-password', 'client-secret', 'test-password']}}
+subprocess.run(['kubectl', '--kubeconfig', sys.argv[1], '-n', sys.argv[2], 'create', '-f', '-'],
+               input=json.dumps(secret), text=True, check=True)
+PYSECRET
+fi
+keycloak_node=$("${kube[@]}" get deployment keycloak-db --ignore-not-found -o 'jsonpath={.spec.template.spec.nodeSelector.kubernetes\.io/hostname}')
+keycloak_node=${keycloak_node:-$node_name}
+address=$(kubectl --kubeconfig "$config" -n traefik get svc traefik -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+: "${address:?Traefik must have a public LoadBalancer IP}"
+public_url="http://$address/auth"
+helm upgrade --install keycloak "$root/helm/keycloak" "${helm_args[@]}" \
+  --timeout 10m --set-string "nodeName=$keycloak_node" --set-string "publicUrl=$public_url"
 for service in loyalty payment reservation gateway; do
   helm upgrade --install "$service-service" "$root/helm/booking-service" \
-    "${helm_args[@]}" -f "$root/deploy/$service-service.yaml" --set-string "image.tag=$image_tag"
+    "${helm_args[@]}" -f "$root/deploy/$service-service.yaml" --set-string "image.tag=$image_tag" \
+    --set-string "env.Authentication__Issuer=$public_url/realms/rsoi" \
+    --set-string "env.Authentication__JwksUri=http://keycloak:8080/auth/realms/rsoi/protocol/openid-connect/certs"
 done

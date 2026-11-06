@@ -43,8 +43,7 @@ Secrets из репозитория ЛР4 автоматически не пер
 иметь доступ к Kubernetes API. Пока кластер и Secrets не готовы, deploy не пройдёт.
 
 README и Postman-коллекции ЛР5 сохранены, выбран вариант v2. Autograding запускает
-коллекцию ЛР5; до настройки Keycloak и JWT она не пройдёт. Параметры Identity
-Provider заполним на следующем этапе. Успешный workflow с continue-on-error у
+коллекцию ЛР5; Keycloak и JWT настраиваются при деплое, см. [инструкцию](keycloak.md). Успешный workflow с continue-on-error у
 шагa autograding не означает успешные API-тесты.
 
 PostgreSQL пока использует hostPath с привязкой к worker, как в ЛР4. Замена worker

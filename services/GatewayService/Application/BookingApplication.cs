@@ -20,7 +20,7 @@ public interface IBookingClients
     Task RollbackReservationAsync(Guid uid, CancellationToken ct);
 }
 
-public sealed class BookingApplication(IBookingClients clients, LoyaltyRetryQueue retryQueue)
+public sealed class BookingApplication(IBookingClients clients, LoyaltyRetryQueue retryQueue, IHttpContextAccessor accessor)
 {
     public Task<HotelPage> HotelsAsync(int page, int size, CancellationToken ct) => clients.GetHotelsAsync(page, size, ct);
     public Task<Loyalty> LoyaltyAsync(string username, CancellationToken ct) => clients.GetLoyaltyAsync(username, ct);
@@ -70,7 +70,7 @@ public sealed class BookingApplication(IBookingClients clients, LoyaltyRetryQueu
         try { await clients.ChangeLoyaltyAsync(username, false, ct); }
         catch (DownstreamUnavailableException exception) when (exception.ServiceName == "Loyalty Service")
         {
-            await retryQueue.EnqueueAsync(new(username), CancellationToken.None);
+            await retryQueue.EnqueueAsync(new(username, accessor.HttpContext!.Request.Headers.Authorization.ToString()), CancellationToken.None);
         }
         return true;
     }

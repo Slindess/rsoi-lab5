@@ -6,4 +6,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="9.0.10" />
+    <Compile Include="../Shared/BookingAuthentication.cs" Link="Security/BookingAuthentication.cs" />
+  </ItemGroup>
 </Project>

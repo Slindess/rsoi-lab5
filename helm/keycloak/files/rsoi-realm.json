@@ -1,0 +1,51 @@
+{
+  "realm": "rsoi",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "accessTokenLifespan": 300,
+  "clients": [
+    {
+      "clientId": "booking",
+      "enabled": true,
+      "publicClient": false,
+      "secret": "${BOOKING_CLIENT_SECRET}",
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": false,
+      "protocol": "openid-connect",
+      "defaultClientScopes": [
+        "profile",
+        "email"
+      ],
+      "protocolMappers": [
+        {
+          "name": "booking-api-audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "booking-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "test-user",
+      "enabled": true,
+      "emailVerified": true,
+      "firstName": "Test",
+      "lastName": "User",
+      "email": "test-user@example.com",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${BOOKING_TEST_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    }
+  ]
+}

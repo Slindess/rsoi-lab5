@@ -1,3 +1,4 @@
+using Booking.Security;
 using ReservationService.Application;
 using ReservationService.Contracts;
 using ReservationService.Infrastructure;
@@ -7,14 +8,16 @@ builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Ad
 var cs = builder.Configuration.GetConnectionString("Database") ?? "Host=localhost;Port=5432;Database=reservations;Username=program;Password=test";
 builder.Services.AddSingleton<IReservationRepository>(new PostgresReservationRepository(cs));
 builder.Services.AddScoped<ReservationApplication>();
+await builder.AddBookingAuthenticationAsync();
 var app = builder.Build();
+app.UseBookingAuthentication();
 await DatabaseInitializer.InitializeAsync(cs);
 app.MapGet("/manage/health", () => Results.Ok(new { status = "UP" }));
 app.MapGet("/internal/hotels", async (int? page, int? size, ReservationApplication s, CancellationToken ct) => Results.Ok(await s.GetHotelsAsync(Math.Max(1, page ?? 1), Math.Clamp(size ?? 10, 1, 100), ct)));
 app.MapGet("/internal/hotels/{uid:guid}", async (Guid uid, ReservationApplication s, CancellationToken ct) => await s.GetHotelAsync(uid, ct) is { } x ? Results.Ok(x) : Results.NotFound(new ErrorDto("Hotel not found")));
-app.MapGet("/internal/reservations", async (string username, ReservationApplication s, CancellationToken ct) => Results.Ok(await s.GetAllAsync(username, ct)));
-app.MapGet("/internal/reservations/{uid:guid}", async (Guid uid, ReservationApplication s, CancellationToken ct) => await s.GetAsync(uid, ct) is { } x ? Results.Ok(x) : Results.NotFound(new ErrorDto("Reservation not found")));
-app.MapPost("/internal/reservations", async (CreateReservationDto dto, ReservationApplication s, CancellationToken ct) => Results.Ok(await s.CreateAsync(dto, ct)));
-app.MapDelete("/internal/reservations/{uid:guid}", async (Guid uid, string username, ReservationApplication s, CancellationToken ct) => await s.CancelAsync(uid, username, ct) ? Results.NoContent() : Results.NotFound(new ErrorDto("Reservation not found")));
+app.MapGet("/internal/reservations", async (HttpContext context, ReservationApplication s, CancellationToken ct) => Results.Ok(await s.GetAllAsync(context.User.Identity!.Name!, ct)));
+app.MapGet("/internal/reservations/{uid:guid}", async (Guid uid, HttpContext context, ReservationApplication s, CancellationToken ct) => await s.GetAsync(uid, ct) is { } x && x.Username == context.User.Identity!.Name ? Results.Ok(x) : Results.NotFound(new ErrorDto("Reservation not found")));
+app.MapPost("/internal/reservations", async (CreateReservationDto dto, HttpContext context, ReservationApplication s, CancellationToken ct) => Results.Ok(await s.CreateAsync(dto with { Username = context.User.Identity!.Name! }, ct)));
+app.MapDelete("/internal/reservations/{uid:guid}", async (Guid uid, HttpContext context, ReservationApplication s, CancellationToken ct) => await s.CancelAsync(uid, context.User.Identity!.Name!, ct) ? Results.NoContent() : Results.NotFound(new ErrorDto("Reservation not found")));
 app.MapDelete("/internal/reservations/{uid:guid}/rollback", async (Guid uid, ReservationApplication s, CancellationToken ct) => await s.DeleteAsync(uid, ct) ? Results.NoContent() : Results.NotFound(new ErrorDto("Reservation not found")));
 app.Run();

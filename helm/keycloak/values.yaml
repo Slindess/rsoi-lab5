@@ -1,0 +1,5 @@
+image: quay.io/keycloak/keycloak:26.4.7
+publicUrl: http://89.108.100.165/auth
+nodeName: ""
+postgresImage: postgres:16-alpine
+hostPath: /var/lib/rsoi-lab5/keycloak-postgres

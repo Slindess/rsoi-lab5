@@ -7,46 +7,131 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: postgres
     volumes:
-      - db-data:/var/lib/postgresql/data
-      - ./postgres:/docker-entrypoint-initdb.d
+    - db-data:/var/lib/postgresql/data
+    - ./postgres:/docker-entrypoint-initdb.d
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test:
+      - CMD-SHELL
+      - pg_isready -U postgres
       interval: 2s
       timeout: 3s
       retries: 30
   loyalty-service:
     image: ${DOCKERHUB_USERNAME:-mslinyakov}/loyalty-service:${IMAGE_TAG:-latest}
-    build: { context: ., dockerfile: services/LoyaltyService/Dockerfile }
+    build:
+      context: .
+      dockerfile: services/LoyaltyService/Dockerfile
     environment:
       ASPNETCORE_URLS: http://+:8050
       ConnectionStrings__Database: Host=postgres;Database=loyalties;Username=program;Password=test
-    ports: ["8050:8050"]
-    depends_on: { postgres: { condition: service_healthy } }
+      Authentication__Issuer: http://localhost:8081/auth/realms/rsoi
+      Authentication__JwksUri: http://keycloak:8080/auth/realms/rsoi/protocol/openid-connect/certs
+    ports:
+    - 8050:8050
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    restart: on-failure
   payment-service:
     image: ${DOCKERHUB_USERNAME:-mslinyakov}/payment-service:${IMAGE_TAG:-latest}
-    build: { context: ., dockerfile: services/PaymentService/Dockerfile }
+    build:
+      context: .
+      dockerfile: services/PaymentService/Dockerfile
     environment:
       ASPNETCORE_URLS: http://+:8060
       ConnectionStrings__Database: Host=postgres;Database=payments;Username=program;Password=test
-    ports: ["8060:8060"]
-    depends_on: { postgres: { condition: service_healthy } }
+      Authentication__Issuer: http://localhost:8081/auth/realms/rsoi
+      Authentication__JwksUri: http://keycloak:8080/auth/realms/rsoi/protocol/openid-connect/certs
+    ports:
+    - 8060:8060
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    restart: on-failure
   reservation-service:
     image: ${DOCKERHUB_USERNAME:-mslinyakov}/reservation-service:${IMAGE_TAG:-latest}
-    build: { context: ., dockerfile: services/ReservationService/Dockerfile }
+    build:
+      context: .
+      dockerfile: services/ReservationService/Dockerfile
     environment:
       ASPNETCORE_URLS: http://+:8070
       ConnectionStrings__Database: Host=postgres;Database=reservations;Username=program;Password=test
-    ports: ["8070:8070"]
-    depends_on: { postgres: { condition: service_healthy } }
+      Authentication__Issuer: http://localhost:8081/auth/realms/rsoi
+      Authentication__JwksUri: http://keycloak:8080/auth/realms/rsoi/protocol/openid-connect/certs
+    ports:
+    - 8070:8070
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    restart: on-failure
   gateway-service:
     image: ${DOCKERHUB_USERNAME:-mslinyakov}/gateway-service:${IMAGE_TAG:-latest}
-    build: { context: ., dockerfile: services/GatewayService/Dockerfile }
+    build:
+      context: .
+      dockerfile: services/GatewayService/Dockerfile
     environment:
       ASPNETCORE_URLS: http://+:8080
       Services__Loyalty: http://loyalty-service:8050
       Services__Payment: http://payment-service:8060
       Services__Reservation: http://reservation-service:8070
-    ports: ["8080:8080"]
-    depends_on: [loyalty-service, payment-service, reservation-service]
+      Authentication__Issuer: http://localhost:8081/auth/realms/rsoi
+      Authentication__JwksUri: http://keycloak:8080/auth/realms/rsoi/protocol/openid-connect/certs
+    ports:
+    - 8080:8080
+    depends_on:
+      loyalty-service:
+        condition: service_started
+      payment-service:
+        condition: service_started
+      reservation-service:
+        condition: service_started
+      keycloak:
+        condition: service_started
+    restart: on-failure
+  keycloak-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: keycloak
+      POSTGRES_DB: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Set KEYCLOAK_DB_PASSWORD}
+    volumes:
+    - keycloak-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U keycloak -d keycloak
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.4.7
+    command:
+    - start-dev
+    - --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Set KEYCLOAK_DB_PASSWORD}
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HOSTNAME: http://localhost:8081/auth
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?Set KEYCLOAK_ADMIN_PASSWORD}
+      BOOKING_CLIENT_SECRET: ${BOOKING_CLIENT_SECRET:?Set BOOKING_CLIENT_SECRET}
+      BOOKING_TEST_PASSWORD: ${BOOKING_TEST_PASSWORD:?Set BOOKING_TEST_PASSWORD}
+    ports:
+    - 8081:8080
+    volumes:
+    - ./helm/keycloak/files/rsoi-realm.json:/opt/keycloak/data/import/rsoi-realm.json:ro
+    depends_on:
+      keycloak-db:
+        condition: service_healthy
 volumes:
-  db-data:
+  db-data: null
+  keycloak-data: null

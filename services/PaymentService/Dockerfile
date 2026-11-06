@@ -3,6 +3,7 @@ WORKDIR /src
 COPY services/PaymentService/PaymentService.csproj services/PaymentService/
 RUN dotnet restore services/PaymentService/PaymentService.csproj
 COPY services/PaymentService services/PaymentService
+COPY services/Shared services/Shared
 RUN dotnet publish services/PaymentService/PaymentService.csproj -c Release -o /app --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:9.0
 WORKDIR /app

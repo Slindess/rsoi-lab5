@@ -52,3 +52,8 @@
 ### Варианты заданий
 
 Распределение вариантов заданий аналогично [ЛР #2](https://github.com/bmstu-rsoi/lab2-template).
+
+## Реализация
+
+Вариант v2, Hotels Booking System. Инструкция по развёртыванию в REG.RU,
+Keycloak и проверке JWT: [deploy/keycloak.md](deploy/keycloak.md).
